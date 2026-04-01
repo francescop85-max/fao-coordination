@@ -576,7 +576,7 @@ function LtoDeliveryChart({ projects }: { projects: EnrichedProject[] }) {
   const byLto = useMemo(() => {
     const map = new Map<string, EnrichedProject[]>();
     for (const p of projects) {
-      const lto = p.ltoOfficer.split('(')[0].trim() || 'Unknown';
+      const lto = (p.projectManager ?? '').split('(')[0].trim() || 'Unknown';
       if (!map.has(lto)) map.set(lto, []);
       map.get(lto)!.push(p);
     }
