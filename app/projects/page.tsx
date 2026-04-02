@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { store } from '../store';
-import { Project } from '../types';
-import { Plus, Search, Pencil, Trash2, X, Check, Upload, AlertCircle, CheckSquare, Square } from 'lucide-react';
+import { Project, WorkPlan } from '../types';
+import Link from 'next/link';
+import { Plus, Search, Pencil, Trash2, X, Check, Upload, AlertCircle, CheckSquare, Square, ClipboardList } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const STATUS_OPTIONS = [
@@ -136,6 +137,7 @@ function diffImport(existing: Project[], incoming: Omit<Project, 'id'>[]): Impor
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [workPlans, setWorkPlans] = useState<WorkPlan[]>([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPM, setFilterPM] = useState('');
@@ -154,6 +156,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     setProjects(store.getProjects());
+    setWorkPlans(store.getWorkPlans());
   }, []);
 
   const save = (updated: Project[]) => {
@@ -466,17 +469,18 @@ export default function ProjectsPage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Donor(s)</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">NTE</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Delivery</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-20">Work Plan</th>
                 <th className="w-20 px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-400 text-sm">No projects found</td></tr>
+                <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400 text-sm">No projects found</td></tr>
               )}
               {filtered.map(p => (
                 editingId === p.id ? (
                   <tr key={p.id} className="bg-amber-50">
-                    <td colSpan={10} className="px-4 py-4">
+                    <td colSpan={11} className="px-4 py-4">
                       <ProjectForm form={form} onChange={f} onSave={commitEdit} onCancel={cancelEdit} />
                     </td>
                   </tr>
@@ -505,6 +509,19 @@ export default function ProjectsPage() {
                         </div>
                         <span className="text-xs text-slate-500">{p.deliveryProgress ?? 0}%</span>
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {workPlans.some(wp => wp.projectId === p.id) ? (
+                        <Link
+                          href="/workplans"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                          title="View work plan"
+                        >
+                          <ClipboardList size={11} /> Yes
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
