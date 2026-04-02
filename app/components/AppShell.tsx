@@ -3,7 +3,6 @@
 import { usePathname } from 'next/navigation';
 import AuthGuard from './AuthGuard';
 import Sidebar from './Sidebar';
-import EmailAlertService from './EmailAlertService';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -15,7 +14,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthGuard>
-      <EmailAlertService />
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-y-auto bg-slate-50">

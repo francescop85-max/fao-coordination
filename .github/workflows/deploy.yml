@@ -35,10 +35,6 @@ jobs:
           # Remove this line once a custom domain is configured —
           # with a custom domain the site is served from / and basePath is not needed.
           NEXT_PUBLIC_BASE_PATH: /fao-coordination
-          # EmailJS credentials — set these in GitHub → Settings → Secrets and variables → Actions
-          NEXT_PUBLIC_EMAILJS_SERVICE_ID:  ${{ secrets.EMAILJS_SERVICE_ID }}
-          NEXT_PUBLIC_EMAILJS_TEMPLATE_ID: ${{ secrets.EMAILJS_TEMPLATE_ID }}
-          NEXT_PUBLIC_EMAILJS_PUBLIC_KEY:  ${{ secrets.EMAILJS_PUBLIC_KEY }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -84,16 +84,3 @@ export interface WorkPlan {
   tasks: WorkTask[];
 }
 
-export type AlertType = 'task-delayed' | 'upcoming-3d' | 'upcoming-7d' | 'milestone';
-
-export interface UserProfile {
-  username: string;
-  email: string;
-  notifications: {
-    taskDelayed: boolean;
-    upcoming3d: boolean;
-    upcoming7d: boolean;
-    milestones: boolean;
-  };
-  lastAlertCheck: string; // ISO datetime
-}
