@@ -4,15 +4,21 @@ import { useEffect } from 'react';
 import { store } from '../store';
 import { differenceInHours, differenceInDays, parseISO } from 'date-fns';
 
+const SERVICE_ID  = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID  ?? '';
+const TEMPLATE_ID = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID ?? '';
+const PUBLIC_KEY  = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY  ?? '';
+
 export default function EmailAlertService() {
   useEffect(() => {
     const run = async () => {
       if (typeof window === 'undefined') return;
+      if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) return; // EmailJS not configured
+
       const username = localStorage.getItem('fao_user');
       if (!username) return;
 
       const profile = store.getUserProfile(username);
-      if (!profile?.email || !profile.emailjsServiceId || !profile.emailjsTemplateId || !profile.emailjsPublicKey) return;
+      if (!profile?.email) return;
 
       // Throttle: check at most once every 6 hours
       const now = new Date();
@@ -69,9 +75,9 @@ export default function EmailAlertService() {
 
       try {
         const emailjs = await import('@emailjs/browser');
-        emailjs.init(profile.emailjsPublicKey);
+        emailjs.init(PUBLIC_KEY);
         for (const alert of alerts) {
-          await emailjs.send(profile.emailjsServiceId, profile.emailjsTemplateId, {
+          await emailjs.send(SERVICE_ID, TEMPLATE_ID, {
             to_email: profile.email,
             subject: alert.subject,
             message: alert.message,

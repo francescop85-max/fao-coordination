@@ -89,9 +89,6 @@ export type AlertType = 'task-delayed' | 'upcoming-3d' | 'upcoming-7d' | 'milest
 export interface UserProfile {
   username: string;
   email: string;
-  emailjsServiceId: string;
-  emailjsTemplateId: string;
-  emailjsPublicKey: string;
   notifications: {
     taskDelayed: boolean;
     upcoming3d: boolean;
