@@ -78,7 +78,7 @@ export default function PortfolioPage() {
 
   const today = useMemo(() => new Date(), []);
 
-  useEffect(() => { setProjects(store.getProjects()); }, []);
+  useEffect(() => { store.getProjects().then(setProjects); }, []);
 
   const enriched = useMemo(() =>
     projects.map(p => ({ ...p, ...getRisk(p, today) })),

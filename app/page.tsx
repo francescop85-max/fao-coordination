@@ -31,12 +31,15 @@ const STATUS_BG: Record<string, string> = {
 
 export default function Dashboard() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [projects, setProjects] = useState<{ id: string; symbol: string }[]>([]);
+  const [projects, setProjects] = useState<{ id: string; symbol: string; status?: string }[]>([]);
   const [filterPM, setFilterPM] = useState('');
 
   useEffect(() => {
-    setMeetings(store.getMeetings());
-    setProjects(store.getProjects());
+    const load = async () => {
+      setMeetings(await store.getMeetings());
+      setProjects(await store.getProjects());
+    };
+    load();
   }, []);
 
   const pmOptions = Array.from(new Set(
@@ -78,10 +81,9 @@ export default function Dashboard() {
 
   // Projects with no meetings
   const meetingProjectIds = new Set(meetings.map(m => m.projectId));
-  const activeProjects = projects.filter(p => {
-    const full = store.getProjects().find(fp => fp.id === p.id);
-    return full?.status.includes('Active') && !full?.status.includes('Pipeline');
-  });
+  const activeProjects = projects.filter(p =>
+    p.status?.includes('Active') && !p.status?.includes('Pipeline')
+  );
   const noMeetingProjects = activeProjects.filter(p => !meetingProjectIds.has(p.id));
 
   return (

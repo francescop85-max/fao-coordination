@@ -63,14 +63,12 @@ export default function MeetingsPage() {
   const [filterPM, setFilterPM] = useState('');
 
   useEffect(() => {
-    setMeetings(store.getMeetings());
-    setProjects(store.getProjects());
+    const load = async () => {
+      setMeetings(await store.getMeetings());
+      setProjects(await store.getProjects());
+    };
+    load();
   }, []);
-
-  const save = (updated: Meeting[]) => {
-    store.saveMeetings(updated);
-    setMeetings(updated);
-  };
 
   const handleProjectChange = (projectId: string) => {
     const p = projects.find(p => p.id === projectId);
@@ -85,14 +83,15 @@ export default function MeetingsPage() {
     }
   };
 
-  const commitForm = () => {
+  const commitForm = async () => {
     if (!form.date || !form.projectId) return;
     if (editingId) {
-      save(meetings.map(m => m.id === editingId ? { ...form, id: editingId } : m));
+      await store.saveMeeting({ ...form, id: editingId });
       setEditingId(null);
     } else {
-      save([...meetings, { ...form, id: Date.now().toString() }]);
+      await store.createMeeting(form);
     }
+    setMeetings(await store.getMeetings());
     setShowForm(false);
     setForm(EMPTY_MEETING);
   };
@@ -104,14 +103,18 @@ export default function MeetingsPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const deleteMeeting = (id: string) => {
-    save(meetings.filter(m => m.id !== id));
+  const deleteMeeting = async (id: string) => {
+    await store.deleteMeeting(id);
+    setMeetings(await store.getMeetings());
     setDeleteConfirm(null);
   };
 
   // Live-save attachment changes from the list view expand panel
-  const updateAttachments = (meetingId: string, updatedAttachments: Meeting['attachments']) => {
-    save(meetings.map(m => m.id === meetingId ? { ...m, attachments: updatedAttachments } : m));
+  const updateAttachments = async (meetingId: string, updatedAttachments: Meeting['attachments']) => {
+    const meeting = meetings.find(m => m.id === meetingId);
+    if (!meeting) return;
+    await store.saveMeeting({ ...meeting, attachments: updatedAttachments });
+    setMeetings(await store.getMeetings());
   };
 
   const pmOptions = Array.from(new Set(

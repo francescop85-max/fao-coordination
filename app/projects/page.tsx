@@ -157,14 +157,12 @@ export default function ProjectsPage() {
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   useEffect(() => {
-    setProjects(store.getProjects());
-    setWorkPlans(store.getWorkPlans());
+    const load = async () => {
+      setProjects(await store.getProjects());
+      setWorkPlans(await store.getWorkPlans());
+    };
+    load();
   }, []);
-
-  const save = (updated: Project[]) => {
-    store.saveProjects(updated);
-    setProjects(updated);
-  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -186,18 +184,17 @@ export default function ProjectsPage() {
     e.target.value = '';
   };
 
-  const confirmImport = () => {
+  const confirmImport = async () => {
     if (!importPreview) return;
-    const bySymbol = new Map(projects.map(p => [p.symbol.trim(), p]));
-    // Apply updates
+    // Apply updates — save each changed project by its existing id
     for (const { prev, next } of importPreview.updated) {
-      bySymbol.set(prev.symbol.trim(), { ...next, id: prev.id });
+      await store.saveProject({ ...next, id: prev.id });
     }
-    // Add new
+    // Add new — server assigns IDs
     for (const p of importPreview.added) {
-      bySymbol.set(p.symbol.trim(), { ...p, id: Date.now().toString() + Math.random() });
+      await store.createProject(p);
     }
-    save(Array.from(bySymbol.values()));
+    setProjects(await store.getProjects());
     setImportPreview(null);
     setImportData([]);
     setImportFilename('');
@@ -244,14 +241,24 @@ export default function ProjectsPage() {
 
   const startEdit = (p: Project) => { setEditingId(p.id); setForm({ ...p }); setShowAdd(false); };
   const cancelEdit = () => setEditingId(null);
-  const commitEdit = () => {
+  const commitEdit = async () => {
     if (!editingId) return;
-    save(projects.map(p => p.id === editingId ? { ...form, id: editingId } : p));
+    await store.saveProject({ ...form, id: editingId });
+    setProjects(await store.getProjects());
     setEditingId(null);
   };
   const startAdd = () => { setForm({ ...EMPTY_PROJECT }); setShowAdd(true); setEditingId(null); };
-  const commitAdd = () => { save([...projects, { ...form, id: Date.now().toString() }]); setShowAdd(false); };
-  const deleteProject = (id: string) => { save(projects.filter(p => p.id !== id)); setDeleteConfirm(null); setSelected(prev => { const s = new Set(prev); s.delete(id); return s; }); };
+  const commitAdd = async () => {
+    await store.createProject(form);
+    setProjects(await store.getProjects());
+    setShowAdd(false);
+  };
+  const deleteProject = async (id: string) => {
+    await store.deleteProject(id);
+    setProjects(await store.getProjects());
+    setDeleteConfirm(null);
+    setSelected(prev => { const s = new Set(prev); s.delete(id); return s; });
+  };
 
   const toggleSelect = (id: string) => setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const allFilteredSelected = filtered.length > 0 && filtered.every(p => selected.has(p.id));
@@ -262,7 +269,14 @@ export default function ProjectsPage() {
       setSelected(prev => { const s = new Set(prev); filtered.forEach(p => s.add(p.id)); return s; });
     }
   };
-  const deleteSelected = () => { save(projects.filter(p => !selected.has(p.id))); setSelected(new Set()); setBulkDeleteConfirm(false); };
+  const deleteSelected = async () => {
+    for (const id of selected) {
+      await store.deleteProject(id);
+    }
+    setProjects(await store.getProjects());
+    setSelected(new Set());
+    setBulkDeleteConfirm(false);
+  };
   const f = (field: keyof typeof form, val: string | number) => setForm(prev => ({ ...prev, [field]: val }));
 
   return (

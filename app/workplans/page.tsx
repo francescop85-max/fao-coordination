@@ -1116,22 +1116,23 @@ export default function WorkPlansPage() {
   const [collapsedPms, setCollapsedPms] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setPlans(store.getWorkPlans());
-    setProjects(store.getProjects());
+    const load = async () => {
+      setPlans(await store.getWorkPlans());
+      setProjects(await store.getProjects());
+    };
+    load();
   }, []);
 
-  const savePlans = (updated: WorkPlan[]) => {
-    setPlans(updated);
-    store.saveWorkPlans(updated);
+  const reloadPlans = async () => {
+    setPlans(await store.getWorkPlans());
   };
 
-  const createPlan = () => {
+  const createPlan = async () => {
     if (!newProjectId) return;
     const project = projects.find(p => p.id === newProjectId);
     if (!project) return;
     const username = typeof window !== 'undefined' ? localStorage.getItem('fao_user') ?? '' : '';
-    const newPlan: WorkPlan = {
-      id: Date.now().toString(),
+    const created = await store.createWorkPlan({
       projectId: project.id,
       projectSymbol: project.symbol,
       projectTitle: project.title,
@@ -1139,20 +1140,21 @@ export default function WorkPlansPage() {
       createdBy: username,
       lastUpdated: new Date().toISOString(),
       tasks: [],
-    };
-    savePlans([...plans, newPlan]);
+    });
+    await reloadPlans();
     setShowNewForm(false);
     setNewProjectId('');
-    setSelectedPlanId(newPlan.id);
+    setSelectedPlanId(created.id);
   };
 
-  const updatePlan = (updated: WorkPlan) => {
-    const updatedPlans = plans.map(p => p.id === updated.id ? updated : p);
-    savePlans(updatedPlans);
+  const updatePlan = async (updated: WorkPlan) => {
+    await store.saveWorkPlan(updated);
+    await reloadPlans();
   };
 
-  const deletePlan = (id: string) => {
-    savePlans(plans.filter(p => p.id !== id));
+  const deletePlan = async (id: string) => {
+    await store.deleteWorkPlan(id);
+    await reloadPlans();
     setDeleteConfirm(null);
     if (selectedPlanId === id) setSelectedPlanId(null);
   };
@@ -1201,7 +1203,7 @@ export default function WorkPlansPage() {
       <div className="p-6 max-w-5xl mx-auto">
         <WorkPlanDetail
           plan={selectedPlan}
-          onUpdate={plan => { updatePlan(plan); setSelectedPlanId(plan.id); }}
+          onUpdate={async plan => { await updatePlan(plan); setSelectedPlanId(plan.id); }}
           onBack={() => setSelectedPlanId(null)}
         />
       </div>

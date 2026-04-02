@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Project {
+  id                  String   @id @default(cuid())
+  symbol              String   @unique
+  title               String
+  status              String
+  eod                 String   @default("")
+  nte                 String   @default("")
+  dwhBudget           Float    @default(0)
+  availableBudget     Float    @default(0)
+  hardCommitment      Float    @default(0)
+  softCommitment      Float    @default(0)
+  cashBalance         Float    @default(0)
+  deliveryLastMonth   Float    @default(0)
+  durationYears       Float    @default(0)
+  ltoOfficer          String   @default("")
+  alternateLto        String   @default("")
+  operationModalities String   @default("")
+  donors              String   @default("")
+  estimate2027        Float    @default(0)
+  deliveryProgress    Float    @default(0)
+  projectManager      String   @default("")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  meetings  Meeting[]
+  workPlans WorkPlan[]
+}
+
+model Meeting {
+  id             String   @id @default(cuid())
+  projectId      String
+  projectSymbol  String
+  projectTitle   String
+  projectManager String   @default("")
+  date           String
+  meetingType    String
+  status         String
+  agenda         String   @default("")
+  notes          String   @default("")
+  attendees      String   @default("")
+  attachments    Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model WorkPlan {
+  id             String   @id @default(cuid())
+  projectId      String
+  projectSymbol  String
+  projectTitle   String
+  projectManager String   @default("")
+  createdBy      String   @default("")
+  lastUpdated    String
+  tasks          Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}

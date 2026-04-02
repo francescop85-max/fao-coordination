@@ -1,65 +1,108 @@
 'use client';
 
 import { Project, Meeting, WorkPlan } from './types';
-import projectsData from '../public/projects.json';
 
-const PROJECTS_KEY = 'fao_projects';
-const MEETINGS_KEY = 'fao_meetings';
-const WORK_PLANS_KEY = 'fao_work_plans';
+// ─── Projects ────────────────────────────────────────────────────────────────
 
-function loadProjects(): Project[] {
-  if (typeof window === 'undefined') return projectsData as Project[];
-  const stored = localStorage.getItem(PROJECTS_KEY);
-  if (stored) {
-    const parsed: Project[] = JSON.parse(stored);
-    const seedBySymbol = new Map(
-      (projectsData as Project[]).map(p => [p.symbol.trim(), p])
-    );
-    const merged = parsed.map(p => {
-      const seed = seedBySymbol.get(p.symbol.trim());
-      if (!seed) return p;
-      return {
-        ...p,
-        projectManager: p.projectManager || seed.projectManager || '',
-      };
-    });
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(merged));
-    return merged;
-  }
-  const initial = projectsData as Project[];
-  localStorage.setItem(PROJECTS_KEY, JSON.stringify(initial));
-  return initial;
+async function loadProjects(): Promise<Project[]> {
+  const res = await fetch('/api/projects');
+  if (!res.ok) return [];
+  return res.json();
 }
 
-function saveProjects(projects: Project[]) {
-  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+async function saveProject(project: Project): Promise<Project> {
+  const res = await fetch(`/api/projects/${project.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(project),
+  });
+  return res.json();
 }
 
-function loadMeetings(): Meeting[] {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem(MEETINGS_KEY);
-  return stored ? JSON.parse(stored) : [];
+async function createProject(project: Omit<Project, 'id'>): Promise<Project> {
+  const res = await fetch('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(project),
+  });
+  return res.json();
 }
 
-function saveMeetings(meetings: Meeting[]) {
-  localStorage.setItem(MEETINGS_KEY, JSON.stringify(meetings));
+async function deleteProject(id: string): Promise<void> {
+  await fetch(`/api/projects/${id}`, { method: 'DELETE' });
 }
 
-function loadWorkPlans(): WorkPlan[] {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem(WORK_PLANS_KEY);
-  return stored ? JSON.parse(stored) : [];
+// ─── Meetings ────────────────────────────────────────────────────────────────
+
+async function loadMeetings(): Promise<Meeting[]> {
+  const res = await fetch('/api/meetings');
+  if (!res.ok) return [];
+  return res.json();
 }
 
-function saveWorkPlans(plans: WorkPlan[]) {
-  localStorage.setItem(WORK_PLANS_KEY, JSON.stringify(plans));
+async function saveMeeting(meeting: Meeting): Promise<Meeting> {
+  const res = await fetch(`/api/meetings/${meeting.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(meeting),
+  });
+  return res.json();
+}
+
+async function createMeeting(meeting: Omit<Meeting, 'id'>): Promise<Meeting> {
+  const res = await fetch('/api/meetings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(meeting),
+  });
+  return res.json();
+}
+
+async function deleteMeeting(id: string): Promise<void> {
+  await fetch(`/api/meetings/${id}`, { method: 'DELETE' });
+}
+
+// ─── Work Plans ───────────────────────────────────────────────────────────────
+
+async function loadWorkPlans(): Promise<WorkPlan[]> {
+  const res = await fetch('/api/workplans');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function saveWorkPlan(plan: WorkPlan): Promise<WorkPlan> {
+  const res = await fetch(`/api/workplans/${plan.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(plan),
+  });
+  return res.json();
+}
+
+async function createWorkPlan(plan: Omit<WorkPlan, 'id'>): Promise<WorkPlan> {
+  const res = await fetch('/api/workplans', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(plan),
+  });
+  return res.json();
+}
+
+async function deleteWorkPlan(id: string): Promise<void> {
+  await fetch(`/api/workplans/${id}`, { method: 'DELETE' });
 }
 
 export const store = {
   getProjects: loadProjects,
-  saveProjects,
+  saveProject,
+  createProject,
+  deleteProject,
   getMeetings: loadMeetings,
-  saveMeetings,
+  saveMeeting,
+  createMeeting,
+  deleteMeeting,
   getWorkPlans: loadWorkPlans,
-  saveWorkPlans,
+  saveWorkPlan,
+  createWorkPlan,
+  deleteWorkPlan,
 };
