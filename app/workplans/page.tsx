@@ -1,20 +1,355 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { store } from '../store';
 import { WorkPlan, WorkTask, Project, TaskStatus, TaskPriority } from '../types';
 import {
   Plus, Search, ChevronDown, ChevronUp, Pencil, Trash2, X, Check,
   ClipboardList, LayoutDashboard, ListChecks, BarChart2, ArrowLeft,
   GitBranch, AlertCircle, Clock, TrendingUp, CheckCircle2,
+  Upload, Download, FileSpreadsheet, AlertTriangle,
 } from 'lucide-react';
-import { format, parseISO, differenceInDays, isAfter, isBefore } from 'date-fns';
+import { format, parseISO, differenceInDays } from 'date-fns';
 import {
   STATUS_COLORS, STATUS_BG, STATUS_LABELS,
   PRIORITY_BG, PRIORITY_LABELS, PRIORITY_COLORS,
   ALL_STATUSES, ALL_PRIORITIES,
 } from './constants';
 import GanttChart from '../components/GanttChart';
+
+// ─── Excel import helpers ────────────────────────────────────────────────────
+
+const VALID_STATUSES = new Set<TaskStatus>(['not-started', 'in-progress', 'completed', 'delayed']);
+const VALID_PRIORITIES = new Set<TaskPriority>(['low', 'medium', 'high', 'critical']);
+
+interface ParsedRow {
+  taskNum: number;
+  title: string;
+  description: string;
+  assignee: string;
+  startDate: string;
+  endDate: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  progress: number;
+  depNums: number[]; // task # references, resolved to ids after parsing
+}
+
+interface ImportPreview {
+  rows: ParsedRow[];
+  warnings: string[];
+}
+
+function normaliseDate(raw: unknown): string {
+  if (!raw) return '';
+  const s = String(raw).trim();
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Excel serial number
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const d = XLSX.SSF.parse_date_code(Number(s));
+    if (d) {
+      const mm = String(d.m).padStart(2, '0');
+      const dd = String(d.d).padStart(2, '0');
+      return `${d.y}-${mm}-${dd}`;
+    }
+  }
+  // Try JS Date parse (e.g. "05/15/2026")
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return s;
+}
+
+function parseWorkplanFile(file: File): Promise<ImportPreview> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const wb = XLSX.read(data, { type: 'array', cellDates: false });
+
+        // Find the "Work Plan" sheet, fall back to first sheet
+        const sheetName = wb.SheetNames.find(n => /work.?plan/i.test(n)) ?? wb.SheetNames[0];
+        const sh = wb.Sheets[sheetName];
+        const rows: (string | number | null)[][] = XLSX.utils.sheet_to_json(sh, { header: 1, defval: null });
+
+        // Find header row: look for a row containing "Title"
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+          if (rows[i].some(c => String(c ?? '').toLowerCase().includes('title'))) {
+            headerIdx = i;
+            break;
+          }
+        }
+        if (headerIdx < 0) {
+          reject(new Error('Could not find a header row with "Title". Make sure you are using the FAO template.'));
+          return;
+        }
+
+        const headers = rows[headerIdx].map(h => String(h ?? '').toLowerCase());
+        const col = (keyword: string) => headers.findIndex(h => h.includes(keyword));
+
+        const colTaskNum   = col('task #') >= 0 ? col('task #') : col('task#') >= 0 ? col('task#') : col('#');
+        const colTitle     = col('title');
+        const colDesc      = col('description');
+        const colAssignee  = col('assignee');
+        const colStart     = col('start');
+        const colEnd       = col('end');
+        const colStatus    = col('status');
+        const colPriority  = col('priority');
+        const colProgress  = col('progress');
+        const colDeps      = col('dependenc');
+
+        if (colTitle < 0) {
+          reject(new Error('Could not find a "Title" column in the file.'));
+          return;
+        }
+
+        const parsed: ParsedRow[] = [];
+        const warnings: string[] = [];
+        let autoNum = 1;
+
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+          const row = rows[i];
+          const title = String(row[colTitle] ?? '').trim();
+          if (!title) continue; // skip empty rows
+
+          const taskNum = colTaskNum >= 0 && row[colTaskNum] != null
+            ? Number(row[colTaskNum])
+            : autoNum;
+          autoNum = taskNum + 1;
+
+          const rawStatus = String(row[colStatus] ?? '').trim().toLowerCase();
+          const status: TaskStatus = VALID_STATUSES.has(rawStatus as TaskStatus)
+            ? (rawStatus as TaskStatus)
+            : 'not-started';
+          if (rawStatus && !VALID_STATUSES.has(rawStatus as TaskStatus)) {
+            warnings.push(`Row ${i + 1}: unrecognised status "${rawStatus}", defaulted to "not-started".`);
+          }
+
+          const rawPriority = String(row[colPriority] ?? '').trim().toLowerCase();
+          const priority: TaskPriority = VALID_PRIORITIES.has(rawPriority as TaskPriority)
+            ? (rawPriority as TaskPriority)
+            : 'medium';
+          if (rawPriority && !VALID_PRIORITIES.has(rawPriority as TaskPriority)) {
+            warnings.push(`Row ${i + 1}: unrecognised priority "${rawPriority}", defaulted to "medium".`);
+          }
+
+          const rawProgress = colProgress >= 0 ? row[colProgress] : null;
+          const progress = Math.min(100, Math.max(0, Number(rawProgress ?? 0) || 0));
+
+          const rawDeps = colDeps >= 0 ? String(row[colDeps] ?? '').trim() : '';
+          const depNums = rawDeps
+            ? rawDeps.split(/[,;]+/).map(s => Number(s.trim())).filter(n => !isNaN(n) && n > 0)
+            : [];
+
+          const startDate = colStart >= 0 ? normaliseDate(row[colStart]) : '';
+          const endDate   = colEnd   >= 0 ? normaliseDate(row[colEnd])   : '';
+
+          if (startDate && endDate && startDate > endDate) {
+            warnings.push(`Row ${i + 1} (${title}): start date is after end date.`);
+          }
+
+          parsed.push({
+            taskNum,
+            title,
+            description: colDesc >= 0 ? String(row[colDesc] ?? '').trim() : '',
+            assignee:    colAssignee >= 0 ? String(row[colAssignee] ?? '').trim() : '',
+            startDate,
+            endDate,
+            status,
+            priority,
+            progress,
+            depNums,
+          });
+        }
+
+        if (parsed.length === 0) {
+          reject(new Error('No tasks found in the file. Make sure the Work Plan sheet has data rows below the header.'));
+          return;
+        }
+
+        // Validate dependency references
+        const knownNums = new Set(parsed.map(p => p.taskNum));
+        parsed.forEach((p, idx) => {
+          p.depNums.forEach(n => {
+            if (!knownNums.has(n)) {
+              warnings.push(`Task "${p.title}": dependency Task #${n} not found in file — it will be ignored.`);
+              // Remove invalid dep
+              parsed[idx].depNums = parsed[idx].depNums.filter(d => d !== n);
+            }
+          });
+        });
+
+        resolve({ rows: parsed, warnings });
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function previewToTasks(preview: ImportPreview, workPlanId: string, projectId: string): WorkTask[] {
+  // Assign stable ids
+  const numToId = new Map<number, string>();
+  const base = Date.now();
+  preview.rows.forEach((row, i) => {
+    numToId.set(row.taskNum, `${base + i}`);
+  });
+
+  return preview.rows.map((row, i) => ({
+    id: `${base + i}`,
+    workPlanId,
+    projectId,
+    title: row.title,
+    description: row.description,
+    assignee: row.assignee,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    status: row.status,
+    priority: row.priority,
+    progress: row.progress,
+    dependencies: row.depNums.map(n => numToId.get(n)!).filter(Boolean),
+  }));
+}
+
+// ─── Import Preview Modal ────────────────────────────────────────────────────
+
+function ImportModal({
+  preview,
+  filename,
+  onConfirm,
+  onCancel,
+  mode,
+  setMode,
+}: {
+  preview: ImportPreview;
+  filename: string;
+  onConfirm: (mode: 'replace' | 'merge') => void;
+  onCancel: () => void;
+  mode: 'replace' | 'merge';
+  setMode: (m: 'replace' | 'merge') => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+              <FileSpreadsheet size={18} className="text-green-600" />
+              Import Preview
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">{filename} · {preview.rows.length} task{preview.rows.length !== 1 ? 's' : ''} found</p>
+          </div>
+          <button onClick={onCancel} className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {/* Warnings */}
+          {preview.warnings.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-amber-800 mb-2">
+                <AlertTriangle size={14} />
+                {preview.warnings.length} warning{preview.warnings.length > 1 ? 's' : ''}
+              </div>
+              <ul className="space-y-0.5">
+                {preview.warnings.map((w, i) => (
+                  <li key={i} className="text-xs text-amber-700">{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Import mode */}
+          <div className="bg-slate-50 rounded-xl p-3">
+            <p className="text-xs font-medium text-slate-600 mb-2">Import mode</p>
+            <div className="flex gap-3">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="mode" checked={mode === 'replace'} onChange={() => setMode('replace')} className="mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium text-slate-700">Replace tasks</div>
+                  <div className="text-xs text-slate-400">Remove all existing tasks and replace with imported ones</div>
+                </div>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="mode" checked={mode === 'merge'} onChange={() => setMode('merge')} className="mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium text-slate-700">Add to existing</div>
+                  <div className="text-xs text-slate-400">Keep current tasks and append the imported ones</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Task list preview */}
+          <div>
+            <p className="text-xs font-medium text-slate-600 mb-2">Tasks to import</p>
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="text-left px-3 py-2 text-slate-500 font-medium w-6">#</th>
+                    <th className="text-left px-3 py-2 text-slate-500 font-medium">Title</th>
+                    <th className="text-left px-3 py-2 text-slate-500 font-medium hidden sm:table-cell">Dates</th>
+                    <th className="text-left px-3 py-2 text-slate-500 font-medium">Status</th>
+                    <th className="text-left px-3 py-2 text-slate-500 font-medium hidden sm:table-cell">Priority</th>
+                    <th className="text-right px-3 py-2 text-slate-500 font-medium">%</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {preview.rows.map((row, i) => (
+                    <tr key={i} className="hover:bg-blue-50">
+                      <td className="px-3 py-2 text-slate-400">{row.taskNum}</td>
+                      <td className="px-3 py-2 font-medium text-slate-700">
+                        {row.title}
+                        {row.depNums.length > 0 && (
+                          <span className="ml-1.5 text-slate-400">
+                            <GitBranch size={9} className="inline" /> {row.depNums.join(',')}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-slate-500 hidden sm:table-cell whitespace-nowrap">
+                        {row.startDate && row.endDate
+                          ? `${row.startDate} → ${row.endDate}`
+                          : row.startDate || row.endDate || '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`px-1.5 py-0.5 rounded-full text-xs ${STATUS_BG[row.status]}`}>
+                          {STATUS_LABELS[row.status]}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 capitalize text-slate-500 hidden sm:table-cell">{row.priority}</td>
+                      <td className="px-3 py-2 text-right text-slate-500">{row.progress}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+          <button onClick={onCancel} className="px-4 py-2 border border-slate-300 text-slate-700 text-sm rounded-lg hover:bg-slate-50">
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(mode)}
+            className="flex items-center gap-2 px-5 py-2 bg-[#003f7d] text-white text-sm rounded-lg hover:bg-[#002d5a]"
+          >
+            <Check size={14} /> Import {preview.rows.length} task{preview.rows.length !== 1 ? 's' : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -626,6 +961,35 @@ function WorkPlanDetail({
   plan, onUpdate, onBack,
 }: { plan: WorkPlan; onUpdate: (p: WorkPlan) => void; onBack: () => void }) {
   const [tab, setTab] = useState<'dashboard' | 'tasks' | 'gantt'>('dashboard');
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importFilename, setImportFilename] = useState('');
+  const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
+  const [importError, setImportError] = useState('');
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError('');
+    try {
+      const preview = await parseWorkplanFile(file);
+      setImportFilename(file.name);
+      setImportPreview(preview);
+    } catch (err: unknown) {
+      setImportError(err instanceof Error ? err.message : 'Could not read file.');
+    }
+    e.target.value = '';
+  };
+
+  const confirmImport = (mode: 'replace' | 'merge') => {
+    if (!importPreview) return;
+    const newTasks = previewToTasks(importPreview, plan.id, plan.projectId);
+    const tasks = mode === 'replace' ? newTasks : [...plan.tasks, ...newTasks];
+    onUpdate({ ...plan, tasks, lastUpdated: new Date().toISOString() });
+    setImportPreview(null);
+  };
 
   const tabs = [
     { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
@@ -635,6 +999,17 @@ function WorkPlanDetail({
 
   return (
     <div>
+      {importPreview && (
+        <ImportModal
+          preview={importPreview}
+          filename={importFilename}
+          mode={importMode}
+          setMode={setImportMode}
+          onConfirm={confirmImport}
+          onCancel={() => setImportPreview(null)}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-start gap-3 mb-6">
         <button
@@ -655,7 +1030,37 @@ function WorkPlanDetail({
             {plan.projectManager} · Updated {format(parseISO(plan.lastUpdated), 'dd MMM yyyy')}
           </div>
         </div>
+        {/* Import / Download template actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={`${basePath}/work_plan_template.xlsx`}
+            download
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 text-slate-600 text-sm rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <Download size={14} /> Template
+          </a>
+          <button
+            onClick={() => importInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-[#003f7d] text-[#003f7d] text-sm rounded-lg hover:bg-blue-50 transition-colors"
+          >
+            <Upload size={14} /> Import Excel
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".xls,.xlsx,.csv"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+        </div>
       </div>
+
+      {importError && (
+        <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+          <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+          {importError}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-6 w-fit">
@@ -816,12 +1221,21 @@ export default function WorkPlansPage() {
             {plans.length} plan{plans.length !== 1 ? 's' : ''} across {allPms.length} project manager{allPms.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button
-          onClick={() => setShowNewForm(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-[#003f7d] text-white text-sm rounded-lg hover:bg-[#002d5a] transition-colors"
-        >
-          <Plus size={16} /> New Work Plan
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/work_plan_template.xlsx`}
+            download
+            className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-600 text-sm rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <Download size={15} /> Download Template
+          </a>
+          <button
+            onClick={() => setShowNewForm(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-[#003f7d] text-white text-sm rounded-lg hover:bg-[#002d5a] transition-colors"
+          >
+            <Plus size={16} /> New Work Plan
+          </button>
+        </div>
       </div>
 
       {/* New plan form */}
