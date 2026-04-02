@@ -52,3 +52,51 @@ export interface Meeting {
   attendees: string;
   attachments: MeetingAttachment[];
 }
+
+// ─── Work Planning Module ────────────────────────────────────────────────────
+
+export type TaskStatus = 'not-started' | 'in-progress' | 'completed' | 'delayed';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export interface WorkTask {
+  id: string;
+  workPlanId: string;
+  projectId: string;
+  title: string;
+  description: string;
+  startDate: string;      // YYYY-MM-DD
+  endDate: string;        // YYYY-MM-DD
+  status: TaskStatus;
+  progress: number;       // 0–100
+  priority: TaskPriority;
+  dependencies: string[]; // WorkTask ids
+  assignee: string;
+}
+
+export interface WorkPlan {
+  id: string;
+  projectId: string;
+  projectSymbol: string;
+  projectTitle: string;
+  projectManager: string;
+  createdBy: string;
+  lastUpdated: string;    // ISO datetime
+  tasks: WorkTask[];
+}
+
+export type AlertType = 'task-delayed' | 'upcoming-3d' | 'upcoming-7d' | 'milestone';
+
+export interface UserProfile {
+  username: string;
+  email: string;
+  emailjsServiceId: string;
+  emailjsTemplateId: string;
+  emailjsPublicKey: string;
+  notifications: {
+    taskDelayed: boolean;
+    upcoming3d: boolean;
+    upcoming7d: boolean;
+    milestones: boolean;
+  };
+  lastAlertCheck: string; // ISO datetime
+}

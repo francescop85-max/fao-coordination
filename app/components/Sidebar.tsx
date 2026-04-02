@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, FolderOpen, CalendarDays, LogOut, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, CalendarDays, LogOut, BarChart3, ClipboardList, User } from 'lucide-react';
 
 const nav = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/projects', label: 'Projects', icon: FolderOpen },
   { href: '/meetings', label: 'Meetings', icon: CalendarDays },
   { href: '/portfolio', label: 'Portfolio Analysis', icon: BarChart3 },
+  { href: '/workplans', label: 'Work Plans', icon: ClipboardList },
 ];
 
 export default function Sidebar() {
@@ -41,7 +42,7 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 py-4 px-2 space-y-1">
         {nav.map(({ href, label, icon: Icon }) => {
-          const active = path === href;
+          const active = href === '/' ? path === '/' : path.startsWith(href);
           return (
             <Link
               key={href}
@@ -64,6 +65,15 @@ export default function Sidebar() {
         {user && (
           <div className="text-blue-300 text-xs px-2 mb-2 truncate">{user}</div>
         )}
+        <Link
+          href="/profile"
+          className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${
+            path === '/profile' ? 'bg-[#007bc0] text-white font-medium' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+          }`}
+        >
+          <User size={15} />
+          My Profile
+        </Link>
         <button
           onClick={logout}
           className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-blue-200 hover:bg-blue-800 hover:text-white transition-colors"

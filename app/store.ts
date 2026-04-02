@@ -1,6 +1,6 @@
 'use client';
 
-import { Project, Meeting } from './types';
+import { Project, Meeting, WorkPlan, UserProfile } from './types';
 import projectsData from '../public/projects.json';
 
 const PROJECTS_KEY = 'fao_projects';
@@ -47,9 +47,42 @@ function saveMeetings(meetings: Meeting[]) {
   localStorage.setItem(MEETINGS_KEY, JSON.stringify(meetings));
 }
 
+const WORK_PLANS_KEY = 'fao_work_plans';
+const USER_PROFILES_KEY = 'fao_user_profiles';
+
+function loadWorkPlans(): WorkPlan[] {
+  if (typeof window === 'undefined') return [];
+  const stored = localStorage.getItem(WORK_PLANS_KEY);
+  return stored ? JSON.parse(stored) : [];
+}
+
+function saveWorkPlans(plans: WorkPlan[]) {
+  localStorage.setItem(WORK_PLANS_KEY, JSON.stringify(plans));
+}
+
+function loadUserProfile(username: string): UserProfile | null {
+  if (typeof window === 'undefined') return null;
+  const stored = localStorage.getItem(USER_PROFILES_KEY);
+  const profiles: UserProfile[] = stored ? JSON.parse(stored) : [];
+  return profiles.find(p => p.username === username) ?? null;
+}
+
+function saveUserProfile(profile: UserProfile) {
+  const stored = localStorage.getItem(USER_PROFILES_KEY);
+  const profiles: UserProfile[] = stored ? JSON.parse(stored) : [];
+  const idx = profiles.findIndex(p => p.username === profile.username);
+  if (idx >= 0) profiles[idx] = profile;
+  else profiles.push(profile);
+  localStorage.setItem(USER_PROFILES_KEY, JSON.stringify(profiles));
+}
+
 export const store = {
   getProjects: loadProjects,
   saveProjects,
   getMeetings: loadMeetings,
   saveMeetings,
+  getWorkPlans: loadWorkPlans,
+  saveWorkPlans,
+  getUserProfile: loadUserProfile,
+  saveUserProfile,
 };
