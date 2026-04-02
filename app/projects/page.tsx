@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { store } from '../store';
 import { Project, WorkPlan } from '../types';
 import Link from 'next/link';
-import { Plus, Search, Pencil, Trash2, X, Check, Upload, AlertCircle, CheckSquare, Square, ClipboardList } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Check, Upload, AlertCircle, CheckSquare, Square, ClipboardList, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const STATUS_OPTIONS = [
@@ -138,6 +138,8 @@ function diffImport(existing: Project[], incoming: Omit<Project, 'id'>[]): Impor
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [workPlans, setWorkPlans] = useState<WorkPlan[]>([]);
+  const [sortCol, setSortCol] = useState<string>('symbol');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPM, setFilterPM] = useState('');
@@ -218,6 +220,26 @@ export default function ProjectsPage() {
     const matchPM = !filterPM || (p.projectManager ?? '').includes(filterPM);
     const matchDonor = !filterDonor || p.donors === filterDonor;
     return matchSearch && matchStatus && matchPM && matchDonor;
+  });
+
+  const toggleSort = (col: string) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  const sorted = [...filtered].sort((a, b) => {
+    let av: string | number = '';
+    let bv: string | number = '';
+    if (sortCol === 'symbol')          { av = a.symbol.trim();                      bv = b.symbol.trim(); }
+    else if (sortCol === 'title')      { av = a.title;                              bv = b.title; }
+    else if (sortCol === 'status')     { av = a.status.trim();                      bv = b.status.trim(); }
+    else if (sortCol === 'lto')        { av = a.ltoOfficer.split('(')[0].trim();    bv = b.ltoOfficer.split('(')[0].trim(); }
+    else if (sortCol === 'pm')         { av = (a.projectManager ?? '').split('(')[0].trim(); bv = (b.projectManager ?? '').split('(')[0].trim(); }
+    else if (sortCol === 'donor')      { av = a.donors;                             bv = b.donors; }
+    else if (sortCol === 'nte')        { av = a.nte;                                bv = b.nte; }
+    else if (sortCol === 'delivery')   { av = a.deliveryProgress ?? 0;              bv = b.deliveryProgress ?? 0; }
+    const cmp = typeof av === 'number' ? av - (bv as number) : String(av).localeCompare(String(bv));
+    return sortDir === 'asc' ? cmp : -cmp;
   });
 
   const startEdit = (p: Project) => { setEditingId(p.id); setForm({ ...p }); setShowAdd(false); };
@@ -461,14 +483,30 @@ export default function ProjectsPage() {
                     {allFilteredSelected ? <CheckSquare size={15} className="text-blue-600" /> : <Square size={15} />}
                   </button>
                 </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-36">Symbol</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Title</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-36">Status</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">LTO Officer</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Project Manager</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Donor(s)</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">NTE</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Delivery</th>
+                {([
+                  { col: 'symbol',   label: 'Symbol',          cls: 'w-36' },
+                  { col: 'title',    label: 'Title',            cls: '' },
+                  { col: 'status',   label: 'Status',           cls: 'w-36' },
+                  { col: 'lto',      label: 'LTO Officer',      cls: 'w-28' },
+                  { col: 'pm',       label: 'Project Manager',  cls: 'w-28' },
+                  { col: 'donor',    label: 'Donor(s)',         cls: 'w-24' },
+                  { col: 'nte',      label: 'NTE',              cls: 'w-24' },
+                  { col: 'delivery', label: 'Delivery',         cls: 'w-24' },
+                ] as { col: string; label: string; cls: string }[]).map(({ col, label, cls }) => (
+                  <th key={col} className={`px-4 py-3 ${cls}`}>
+                    <button
+                      onClick={() => toggleSort(col)}
+                      className="flex items-center gap-1 text-xs font-semibold text-slate-500 uppercase tracking-wide hover:text-slate-800 transition-colors group"
+                    >
+                      {label}
+                      <span className="text-slate-300 group-hover:text-slate-500">
+                        {sortCol === col
+                          ? sortDir === 'asc' ? <ChevronUp size={13} className="text-blue-500" /> : <ChevronDown size={13} className="text-blue-500" />
+                          : <ChevronsUpDown size={13} />}
+                      </span>
+                    </button>
+                  </th>
+                ))}
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-20">Work Plan</th>
                 <th className="w-20 px-4 py-3"></th>
               </tr>
@@ -477,7 +515,7 @@ export default function ProjectsPage() {
               {filtered.length === 0 && (
                 <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400 text-sm">No projects found</td></tr>
               )}
-              {filtered.map(p => (
+              {sorted.map(p => (
                 editingId === p.id ? (
                   <tr key={p.id} className="bg-amber-50">
                     <td colSpan={11} className="px-4 py-4">
